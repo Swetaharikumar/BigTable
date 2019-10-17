@@ -96,15 +96,21 @@ class MyHandler(BaseHTTPRequestHandler):
                     self._set_response(409)
 
 
+        
+
+
                 
             
 
     def do_DELETE(self):
-        path_list = self.path.split('/')
-        if path_list[1] == 'api' and path_list[2] == 'tables':
-            if path_list[3] in const.table_names["tables"]:
-                const.table_names["tables"].remove(path_list[3])
-                del const.table_meta_data[path_list[3]]
+
+        parser_post_type_obj = UrlParser('delete')
+        dict_return = parser_post_type_obj.parse(self.path)
+
+        if(dict_return["function_name"] == const.del_function_types[0]):
+            if dict_return["table_name"] in const.table_names["tables"]:
+                const.table_names["tables"].remove(dict_return["table_name"])
+                del const.table_meta_data[dict_return["table_name"]]
                 self._set_response(200)
             else:
                 self._set_response(404)

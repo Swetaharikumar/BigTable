@@ -10,7 +10,6 @@ class UrlParser():
 		self.return_dict = {
 			"is_404" : False,
 			"table_name" : None,
-			"cell_name" : None,
 			"function_name" : None
 		}
 
@@ -54,6 +53,11 @@ class UrlParser():
 
 				if(len(url) == 2):
 					self.return_dict["function_name"] = const.post_function_types[0]
+
+				elif(len(url) ==3):
+					self.return_dict["function_name"] = const.post_function_types[1]
+					self.return_dict["table_name"] = url[2]
+
 					
 					
 
@@ -62,6 +66,11 @@ class UrlParser():
 
 
 			elif self.httpType.lower() == 'delete':
+				if(len(url) == 3):
+					self.return_dict["function_name"] = const.del_function_types[0]
+					self.return_dict["table_name"] = url[2]
+
+
 				pass
 
 
