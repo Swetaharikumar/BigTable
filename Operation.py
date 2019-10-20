@@ -3,6 +3,7 @@ import consts as const
 # pip install BTrees
 from BTrees.OOBTree import OOBTree
 import pickle
+import os
 
 
 class Operation:
@@ -11,11 +12,12 @@ class Operation:
         self.ssTable = {}
         self.max_entries = 100
         self.entries = 0
-        self.files = []
-        self.filenum = 0
+        self.WALnum = 0
+       
+        
 
-    def insert(self, table_name, post_data):
-        if table_name not in const.table_names["tables"]:
+    def insert(self, table_name, post_data, for_WAL):
+        if "table_names" not in const.manifest or table_name not in const.manifest["table_names"]["tables"]:
             return 404
         cell = {}
         try:
@@ -26,6 +28,17 @@ class Operation:
             return 400
         if not self.find_column_family_and_column(table_name, cell["column_family"], cell["column"]):
             return 400
+
+        #Write to WAL
+        if not for_WAL:
+            dic = {}
+            dic["cell"] = cell
+            dic["table_name"] = table_name
+            const.WAL.append(dic)
+            with open(const.WAL_filename, 'wb') as outfile:
+                pickle.dump(const.WAL,outfile)
+
+
         if table_name not in self.mem_table:
             self.mem_table[table_name] = {}
         if cell["column_family"] not in self.mem_table[table_name]:
@@ -37,6 +50,7 @@ class Operation:
             t.update({cell["row"]: {"row": cell["row"], "data": cell["data"]}})
         else:
             t[cell["row"]]["data"] += cell["data"]
+            # Garbage collection
             while len(t[cell["row"]]["data"]) > 5:
                 t[cell["row"]]["data"].pop(0)
         self.entries = self.entries + 1
@@ -45,7 +59,7 @@ class Operation:
         return 200
 
     def retrieve(self, table_name, get_data):
-        if table_name not in const.table_names["tables"]:
+        if table_name not in const.manifest["table_names"]["tables"]:
             return {"success": False, "success_code": 404}
         input = {}
         try:
@@ -67,7 +81,7 @@ class Operation:
                                     input["row"]]}
 
         # Not found in memory
-        for file_name in self.files:
+        for file_name in const.manifest.get("files", []):
             with open(file_name, 'rb') as file:
                 sstable = pickle.load(file)
                 if table_name in sstable:
@@ -113,7 +127,7 @@ class Operation:
                     if not rows == []:
                         return {"success": True, "data": {"rows": rows}}
 
-        for file_name in self.files:
+        for file_name in const.manifest.get("files",[]):
             with open(file_name, 'rb') as file:
                 sstable = pickle.load(file)
                 if table_name in sstable:
@@ -144,38 +158,37 @@ class Operation:
         return 200
 
     def find_column_family_and_column(self, table_name, column_family_name, column_name):
-        for column_family in const.table_meta_data[table_name]["column_families"]:
+        for column_family in const.manifest["table_meta_data"][table_name]["column_families"]:
             if column_family["column_family_key"] == column_family_name:
                 if column_name in column_family["columns"]:
                     return True
         return False
 
     def spill_to_disk(self):
-        file_name = 'data' + str(self.filenum + 1) + '.txt'
-        pickle.dump(self.mem_table, open("save.p", "wb"))
+        if "filenum" not in const.manifest:
+            const.manifest["filenum"] = 0
+
+        file_name = 'data' + str(const.manifest["filenum"] + 1) + '.txt'
+        # pickle.dump(self.mem_table, open("save.p", "wb"))
         # entry = 0
         with open(file_name, 'wb') as outfile:
             pickle.dump(self.mem_table, outfile)
-        #     for table_name in self.mem_table:
-        #         for column_family in self.mem_table[table_name]:
-        #             for column in self.mem_table[table_name][column_family]:
-        #                 for row in self.mem_table[table_name][column_family][column]:
-        #                     if table_name not in self.ssTable:
-        #                         self.ssTable.update({table_name: {}})
-        #                     if column_family not in self.ssTable[table_name]:
-        #                         self.ssTable[table_name].update({column_family: {}})
-        #                     if column not in self.ssTable[table_name][column_family]:
-        #                         self.ssTable[table_name][column_family].update({column: {}})
-        #                     if row not in self.ssTable[table_name][column_family][column]:
-        #                         self.ssTable[table_name][column_family][column].update({row: []})
-        #                     self.ssTable[table_name][column_family][column][row].append({"file_name": file_name, "entry": entry})
-        #                     outfile.write(json.dumps(
-        #                         {"table": table_name, "column_family": column_family, "column": column, "row": row,
-        #                          "data": self.mem_table[table_name][column_family][column][row]}))
-        #                     outfile.write('\n')
-        #                     entry += 1
+
+        os.remove(const.WAL_filename)
 
         self.mem_table = {}
         self.entries = 0
-        self.files.append(file_name)
-        self.filenum += 1
+
+        if "files" not in const.manifest:
+            const.manifest["files"] = []
+
+
+        const.manifest["files"].append(file_name)
+        const.manifest["filenum"] += 1
+        with open(const.manifest_filename, 'wb') as outfile:
+                    pickle.dump(const.manifest, outfile)
+
+
+    
+
+
