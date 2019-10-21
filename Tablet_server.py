@@ -183,7 +183,7 @@ class MyHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server_address = ("localhost", 8080)
+    server_address = ("localhost", 8001)
     handler_class = MyHandler
     server_class = HTTPServer
 

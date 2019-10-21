@@ -81,16 +81,27 @@ class Operation:
                                     input["row"]]}
 
         # Not found in memory
-        for file_name in const.manifest.get("files", []):
-            with open(file_name, 'rb') as file:
-                sstable = pickle.load(file)
-                if table_name in sstable:
-                    if input["column_family"] in sstable[table_name]:
-                        if input["column"] in sstable[table_name][input["column_family"]]:
-                            if input["row"] in sstable[table_name][input["column_family"]][input["column"]]:
-                                return {"success": True,
-                                        "data": sstable[table_name][input["column_family"]][input["column"]][
-                                            input["row"]]}
+        try:
+            rows = const.manifest["ssindex"][table_name][input["column_family"]][input["column"]]
+        except:
+            return {"success": False, "success_code": 409}
+        if input["row"] not in rows:
+            return {"success": False, "success_code": 409}
+        for file_dict in rows[input["row"]]:
+            with open(file_dict["file_name"], 'r') as file:
+                file.seek(file_dict["offset"])
+                return {"success": True, "data": json.loads(file.readline())}
+
+        # for file_name in const.manifest.get("files", []):
+        #     with open(file_name, 'rb') as file:
+        #         sstable = pickle.load(file)
+        #         if table_name in sstable:
+        #             if input["column_family"] in sstable[table_name]:
+        #                 if input["column"] in sstable[table_name][input["column_family"]]:
+        #                     if input["row"] in sstable[table_name][input["column_family"]][input["column"]]:
+        #                         return {"success": True,
+        #                                 "data": sstable[table_name][input["column_family"]][input["column"]][
+        #                                     input["row"]]}
 
         # if input["row"] not in self.ssTable:
         #     return {"success": False, "success_code": 404}
@@ -103,7 +114,7 @@ class Operation:
         #                     "row"] == input["row"]:
         #                 return {"success": True, "data": row}
         #
-        return {"success": False, "success_code": 409}
+        return {"success": False, "success_code": 404}
 
     def retrieve_cells(self, table_name, get_data):
         if table_name not in const.table_names["tables"]:
@@ -127,18 +138,31 @@ class Operation:
                     if not rows == []:
                         return {"success": True, "data": {"rows": rows}}
 
-        for file_name in const.manifest.get("files",[]):
-            with open(file_name, 'rb') as file:
-                sstable = pickle.load(file)
-                if table_name in sstable:
-                    if input["column_family"] in sstable[table_name]:
-                        if input["column"] in sstable[table_name][input["column_family"]]:
-                            t = sstable[table_name][input["column_family"]][input["column"]]
-                            rows = list(t.values(input["row_from"], input["row_to"]))
-                            if not rows == []:
-                                return {"success": True, "data": {"rows": rows}}
+        # Not found in memory
+        data = []
+        try:
+            rows = const.manifest["ssindex"][table_name][input["column_family"]][input["column"]]
+        except:
+            return {"success": False, "success_code": 409}
+        keys = list(rows.values(input["row_from"], input["row_to"]))
+        for row in keys:
+            for file_dict in row:
+                with open(file_dict["file_name"], 'r') as file:
+                    file.seek(file_dict["offset"])
+                    data.append(json.loads(file.readline()))
 
-        return {"success": False, "success_code": 409}
+        # for file_name in const.manifest.get("files",[]):
+        #     with open(file_name, 'rb') as file:
+        #         sstable = pickle.load(file)
+        #         if table_name in sstable:
+        #             if input["column_family"] in sstable[table_name]:
+        #                 if input["column"] in sstable[table_name][input["column_family"]]:
+        #                     t = sstable[table_name][input["column_family"]][input["column"]]
+        #                     rows = list(t.values(input["row_from"], input["row_to"]))
+        #                     if not rows == []:
+        #                         return {"success": True, "data": {"rows": rows}}
+
+        return {"success": True, "data": {"rows": data}}
 
     def set_max_entries(self, post_data):
         my_dict = {}
@@ -171,11 +195,25 @@ class Operation:
         file_name = 'data' + str(const.manifest["filenum"] + 1) + '.txt'
         # pickle.dump(self.mem_table, open("save.p", "wb"))
         # entry = 0
-        with open(file_name, 'wb') as outfile:
-            pickle.dump(self.mem_table, outfile)
+        with open(file_name, 'w') as outfile:
+            for table_name in self.mem_table:
+                if table_name not in const.manifest["ssindex"]:
+                    const.manifest["ssindex"].update({table_name: {}})
+                for column_family in self.mem_table[table_name]:
+                    if column_family not in const.manifest["ssindex"][table_name]:
+                        const.manifest["ssindex"][table_name].update({column_family: {}})
+                    for column in self.mem_table[table_name][column_family]:
+                        if column not in const.manifest["ssindex"][table_name][column_family]:
+                            const.manifest["ssindex"][table_name][column_family].update({column: OOBTree()})
+                        for row in self.mem_table[table_name][column_family][column]:
+                            if row not in const.manifest["ssindex"][table_name][column_family][column]:
+                                const.manifest["ssindex"][table_name][column_family][column].update({row: []})
+                            last_pos = outfile.tell()
+                            json.dump(self.mem_table[table_name][column_family][column][row], outfile)
+                            outfile.write("\n")
+                            const.manifest["ssindex"][table_name][column_family][column][row].insert(0, {"file_name": file_name, "offset":last_pos})
 
         os.remove(const.WAL_filename)
-
         self.mem_table = {}
         self.entries = 0
 
