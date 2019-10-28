@@ -1,3 +1,4 @@
+import Master_consts as master_const
 import consts as const
 
 
@@ -11,7 +12,7 @@ class UrlParser():
             "is_404": False,
             "table_name": None,
             "function_name": None
-        }
+                    }
 
     def parse(self, url):
         """
@@ -33,12 +34,12 @@ class UrlParser():
 
                 # List tables if
                 if (len(url) == 2):
-                    self.return_dict["function_name"] = const.get_function_types[0]
+                    self.return_dict["function_name"] = master_const.get_function_types[0]
 
 
                 # Get Table Info
                 elif (len(url) == 3):
-                    self.return_dict["function_name"] = const.get_function_types[1]
+                    self.return_dict["function_name"] = master_const.get_function_types[1]
                     self.return_dict["table_name"] = url[2]
 
                 else:
@@ -48,14 +49,15 @@ class UrlParser():
 
                 # Create table
                 if (len(url) == 2):
-                    self.return_dict["function_name"] = const.post_function_types[0]
+                    self.return_dict["function_name"] = master_const.post_function_types[0]
+
 
                 else:
                     self.return_dict["is_404"] = True
 
             elif self.httpType.lower() == 'delete':
                 if (len(url) == 3):
-                    self.return_dict["function_name"] = const.del_function_types[0]
+                    self.return_dict["function_name"] = master_const.del_function_types[0]
                     self.return_dict["table_name"] = url[2]
 
                 else:
@@ -70,13 +72,13 @@ class UrlParser():
                 # Retrieve cell or cells or row
                 if (len(url) == 4):
                     if url[3] == 'cell':
-                        self.return_dict["function_name"] = const.get_function_types[2]
+                        self.return_dict["function_name"] = master_const.get_function_types[2]
                         self.return_dict["table_name"] = url[2]
                     elif url[3] == 'cells':
-                        self.return_dict["function_name"] = const.get_function_types[3]
+                        self.return_dict["function_name"] = master_const.get_function_types[3]
                         self.return_dict["table_name"] = url[2]
                     elif url[3] == 'row':
-                        self.return_dict["function_name"] = const.get_function_types[4]
+                        self.return_dict["function_name"] = master_const.get_function_types[4]
                         self.return_dict["table_name"] = url[2]
                 else:
                     self.return_dict["is_404"] = True
@@ -91,12 +93,24 @@ class UrlParser():
 
 
         elif url[0] == 'api' and url[1] == 'memtable':
-            self.return_dict["function_name"] = const.post_function_types[2]
+            self.return_dict["function_name"] = master_const.post_function_types[2]
+
+        elif url[0] == 'api' and url[1] == 'lock':
+            if(self.httpType.lower() == 'post'):
+                self.return_dict["function_name"] = master_const.post_function_types[3]
+                self.return_dict["table_name"] = url[2]
+            else:
+                self.return_dict["function_name"] = master_const.del_function_types[1]
+                self.return_dict["table_name"] = url[2]
 
         else:
             self.return_dict["is_404"] = True
 
         return self.return_dict
+
+
+
+
 
 
 """
