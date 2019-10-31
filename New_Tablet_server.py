@@ -1,9 +1,11 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 from parser_util import UrlParser
-import consts as const
-import Operation as op
+from consts import Const
+# import Operation as op
 import pickle
+import sys
+from BTrees.OOBTree import OOBTree
 
 
 # table_names = {"tables" : []}
@@ -35,9 +37,6 @@ class MyHandler(BaseHTTPRequestHandler):
         dict_return = parser_get_type_obj.parse(self.path)
 
         # perform on the dict_return
-        
-
-
 
         # # Table Get Info
         # elif dict_return["function_name"] == const.get_function_types[1]:
@@ -53,17 +52,15 @@ class MyHandler(BaseHTTPRequestHandler):
         #     else:
         #         self._set_response(400)
 
-
         # retrieve a cell
         if dict_return["function_name"] == const.get_function_types[0]:
-            return_value = const.operation.retrieve(dict_return["table_name"], get_data)
+            return_value = const.retrieve(dict_return["table_name"], get_data)
             if return_value["success"]:
                 data_json = json.dumps(return_value["data"])
                 self._set_response(200)
                 self.wfile.write(data_json.encode("utf8"))
             else:
                 self._set_response(return_value["success_code"])
-
 
         # # retrieve cells
         # elif dict_return["function_name"] == const.get_function_types[3]:
@@ -86,13 +83,13 @@ class MyHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         # example: reading content from HTTP request
         print("here")
-        
+        print(self.path)
+
         data = None
         content_length = self.headers['content-length']
         if content_length != None:
             content_length = int(content_length)
             post_data = self.rfile.read(content_length)
-
 
         # Create a table
         path = self.path.split('/')
@@ -104,9 +101,9 @@ class MyHandler(BaseHTTPRequestHandler):
             except:
                 self._set_response(400)
                 return
-            
 
-            exists = True if "table_meta_data" in const.manifest and my_dict['name'] in const.manifest["table_meta_data"] else False
+            exists = True if "table_meta_data" in const.manifest and my_dict['name'] in const.manifest[
+                "table_meta_data"] else False
 
             if exists == False:
 
@@ -115,57 +112,105 @@ class MyHandler(BaseHTTPRequestHandler):
                 if "table_meta_data" not in const.manifest:
                     const.manifest["table_meta_data"] = const.table_meta_data
 
-
-
-                # Write to manifest variable 
+                # Write to manifest variable
                 const.manifest["table_names"]["tables"].append(my_dict['name'])
                 const.manifest["table_meta_data"][my_dict['name']] = my_dict
 
-
-                #Write manifest to disk for recovery purposes
+                # Write manifest to disk for recovery purposes
                 with open(const.manifest_filename, 'wb') as outfile:
                     pickle.dump(const.manifest, outfile)
 
-
                 # const.table_names["tables"].append(my_dict['name'])
                 # const.table_meta_data[my_dict['name']] = my_dict
-                #const.mem_table[my_dict['name']] = []
+                # const.mem_table[my_dict['name']] = []
 
                 self._set_response(200)
             else:
                 self._set_response(409)
                 print("409")
 
-        parser_post_type_obj = UrlParser('post')
-        dict_return = parser_post_type_obj.parse(self.path)
+        # Recover
+        elif path[1] == const.post_function_types[2]:
+            print("recovering...")
+            my_dict = {}
+            try:
+                my_dict = json.loads(post_data)
+            except:
+                self._set_response(400)
+                return
 
-        # Insert cell
-        if dict_return["function_name"] == const.post_function_types[1]:
-            self._set_response(const.operation.insert(dict_return["table_name"], post_data,False))
+            print(my_dict)
 
-        # # Set max entries
-        # elif dict_return["function_name"] == const.post_function_types[2]:
-        #     my_dict = {}
-        #     try:
-        #         my_dict = json.loads(post_data)
-        #     except:
-        #         self._set_response(400)
-        #         return
+            WAL_filename = "WAL_" + my_dict["hostname"] + "_" + str(my_dict["port"]) + ".txt"
+            try:
+                with open(WAL_filename, 'rb') as new_file:
+                    WAL = pickle.load(new_file)
+                for i in range(len(WAL)):
+                    if table_name not in self.manifest["table_names"]["tables"]:
+                        const.manifest["table_names"]["tables"].append(table_name)
+                        const.manifest["table_meta_data"][table_name] = {}
 
-        #     if 'memtable_max' not in my_dict:
-        #         return 400
-        #     new_entries = my_dict['memtable_max']
-        #     if not isinstance(new_entries, int):
-        #         return 400
-        #     const.manifest["max_entries"] = new_entries
-        #     with open(const.manifest_filename, 'wb') as outfile:
-        #             pickle.dump(const.manifest, outfile)
+                    data_json = json.dumps(WAL[i]["cell"])
+                    post_data = data_json.encode("utf8")
+                    const.insert(const.WAL[i]["table_name"], post_data, True)
+                with open(const.WAL_filename, 'wb') as outfile:
+                    pickle.dump(const.WAL, outfile)
 
+            except IOError:
+                print("WAL file doesn't exist")
+                pass
 
-        #     self._set_response(const.operation.set_max_entries(post_data))
+            manifest_filename = "manifest_" + my_dict["hostname"] + "_" + str(my_dict["port"]) + ".txt"
+            try:
+                with open(manifest_filename, 'rb') as new_file:
+                    manifest = pickle.load(new_file)
+                    # update ssindex
+                    for table_name in manifest["ssindex"]:
+                        if table_name not in const.manifest["ssindex"]:
+                            const.manifest["ssindex"].update({table_name: {}})
+                        for column_family in manifest["ssindex"][table_name]:
+                            if column_family not in const.manifest["ssindex"][table_name]:
+                                const.manifest["ssindex"][table_name].update({column_family: {}})
+                            for column in manifest["ssindex"][table_name][column_family]:
+                                if column not in const.manifest["ssindex"][table_name][column_family]:
+                                    const.manifest["ssindex"][table_name][column_family].update({column: OOBTree()})
+                                for row in manifest["ssindex"][table_name][column_family][column]:
+                                    if row not in const.manifest["ssindex"][table_name][column_family][column]:
+                                        const.manifest["ssindex"][table_name][column_family][column].update({row: []})
+                                    const.manifest["ssindex"][table_name][column_family][column][row] += \
+                                        manifest["ssindex"][table_name][column_family][column][row]
+                    for table_name in manifest["table_names"]["tables"]:
+                        if table_name not in const.manifest["table_names"]["tables"]:
+                            const.manifest["table_names"]["tables"].append(table_name)
+                    for table_name in manifest["table_meta_data"]:
+                        if table_name not in const.manifest["table_meta_data"]:
+                            const.manifest["table_meta_data"][table_name] = {"name": table_name, "column_families": []}
+                        const.manifest["table_meta_data"][table_name]["column_families"] += \
+                        manifest["table_meta_data"][table_name]["column_families"]
 
-        # else:
-        #     self._set_response(404)
+                with open(const.manifest_filename, 'wb') as outfile:
+                    pickle.dump(const.manifest, outfile)
+            except IOError:
+                print("manifest file doesn't exist")
+                pass
+            self._set_response(200)
+
+        # regular check
+        elif path[1] == const.post_function_types[3]:
+            self._set_response(200)
+
+        else:
+            parser_post_type_obj = UrlParser('post')
+            dict_return = parser_post_type_obj.parse(self.path)
+            # insert cell
+
+            if dict_return["function_name"] == const.post_function_types[1]:
+                print("insert cell")
+                self._set_response(const.insert(dict_return["table_name"], post_data, False))
+
+            else:
+                print(dict_return["function_name"])
+                self._set_response(409)
 
     def do_DELETE(self):
         # parser_post_type_obj = UrlParser('delete')
@@ -185,45 +230,51 @@ class MyHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server_address = ("localhost", 8080)
+    if len(sys.argv) < 4:
+        exit(1)
+
+    hostname = sys.argv[1]
+    port = int(sys.argv[2])
+
+    master_hostname = sys.argv[3]
+    master_port = int(sys.argv[4])
+
+    const = Const(hostname, port)
+
+    server_address = (hostname, port)
+    master_server_address = (master_hostname, master_port)
     handler_class = MyHandler
     server_class = HTTPServer
 
     httpd = HTTPServer(server_address, handler_class)
 
-
     try:
         with open(const.manifest_filename, 'rb') as file:
-            const.manifest = pickle.load(file)
+            # const.manifest = pickle.load(file)
+            pass
     except IOError:
         with open(const.manifest_filename, 'wb') as file:
             pass
 
-   
-
-    WAL_needed = False
+    # WAL_needed = False
 
     try:
         with open(const.WAL_filename, 'rb') as new_file:
-            const.WAL = pickle.load(new_file)
-            WAL_needed = True
+            # const.WAL = pickle.load(new_file)
+            # WAL_needed = True
+            pass
     except IOError:
         with open(const.WAL_filename, 'wb') as new_file:
             pass
 
-    if(WAL_needed):
+    # if (WAL_needed):
+    #
+    #     for i in range(len(const.WAL)):
+    #         data_json = json.dumps(const.WAL[i]["cell"])
+    #         post_data = data_json.encode("utf8")
+    #         const.insert(const.WAL[i]["table_name"], post_data, True)
 
-        for i in range(len(const.WAL)):
-            data_json = json.dumps(const.WAL[i]["cell"])
-            post_data = data_json.encode("utf8")
-            const.operation.insert(const.WAL[i]["table_name"],post_data, True)
-
-
-
-
-
-
-    print("sample server running...")
+    print("Tablet server running at " + hostname + " " + str(port))
 
     try:
         httpd.serve_forever()
