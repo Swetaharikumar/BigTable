@@ -1,5 +1,4 @@
 import Master_consts as master_const
-import consts as const
 
 
 class UrlParser():
@@ -27,6 +26,9 @@ class UrlParser():
         """
 
         url = url.split('/')[1:]  # ignore empty start list[0]
+        if url[-1] == "":
+            del url[-1] # ignore empty end list[-1]
+
         if url[0] == 'api' and url[1] == 'tables' and len(url) <= self.url_length:
 
             # Check if HttpType is get, post or delete
@@ -86,7 +88,7 @@ class UrlParser():
             elif self.httpType.lower() == 'post':
                 # Insert cell
                 if (len(url) == 4):
-                    self.return_dict["function_name"] = const.post_function_types[1]
+                    self.return_dict["function_name"] = master_const.post_function_types[1]
                     self.return_dict["table_name"] = url[2]
                 else:
                     self.return_dict["is_404"] = True
